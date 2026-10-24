@@ -1,0 +1,13 @@
+
+{
+  "id": "/ODP---mapping/",
+  "name": "ODP Mapping FTTH",
+  "short_name": "ODP Mapping",
+  "description": "Pemetaan ODP dan pencatatan jaringan FTTH",
+  "start_url": "/ODP---mapping/",
+  "scope": "/ODP---mapping/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#1565c0"
+}
