@@ -1,0 +1,342 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0f766e">
+<title>ODP Mapping</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f1f5f9;color:#1e293b}
+header{background:#0f766e;color:white;padding:20px}
+header h1{margin:0;font-size:24px}
+header p{margin:7px 0 0;font-size:13px}
+main{padding:14px;max-width:700px;margin:auto}
+.card{background:white;padding:16px;border-radius:14px;margin-bottom:15px;box-shadow:0 2px 8px #0001}
+h2{font-size:18px;margin:0 0 14px}
+label{display:block;font-size:14px;font-weight:bold;margin:12px 0 6px}
+input,select{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;font-size:16px;background:white}
+button{padding:12px;border:0;border-radius:8px;background:#0f766e;color:white;font-size:14px;font-weight:bold}
+button:active{opacity:.8}
+.full{width:100%;margin-top:10px}
+.secondary{background:#e2e8f0;color:#1e293b}
+.danger{background:#b91c1c}
+#map{height:320px;border-radius:10px;z-index:1}
+.small{font-size:13px;color:#64748b;line-height:1.6;overflow-wrap:anywhere}
+.item{border:1px solid #e2e8f0;padding:12px;border-radius:10px;margin-top:10px;overflow-wrap:anywhere}
+.item h3{margin:0 0 8px;font-size:16px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.actions button{padding:9px}
+.status{font-size:13px;color:#475569;margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+<h1>ODP Mapping</h1>
+<p>Pendataan dan pemetaan jaringan FTTH</p>
+</header>
+
+<main>
+<section class="card">
+<h2>Peta ODP</h2>
+<div id="map"></div>
+<button id="myLocation" class="full">Tampilkan Lokasi Saya</button>
+<p class="small">Penanda ODP muncul jika koordinat sudah disimpan.</p>
+</section>
+
+<section class="card">
+<h2>Tambah ODP</h2>
+<form id="form">
+<label for="nama">Nama ODP</label>
+<input id="nama" placeholder="ODP-PUJON-001" required>
+
+<label for="port">Kapasitas port</label>
+<select id="port">
+<option value="8">8 port</option>
+<option value="16">16 port</option>
+<option value="24">24 port</option>
+<option value="48">48 port</option>
+</select>
+
+<label for="terpakai">Port terpakai</label>
+<input id="terpakai" type="number" min="0" max="8" value="0" required>
+
+<label for="alamat">Alamat / patokan lokasi</label>
+<input id="alamat" placeholder="Contoh: dekat pertigaan">
+
+<label for="koordinat">Koordinat GPS</label>
+<input id="koordinat" placeholder="Belum diambil" readonly>
+<button id="gps" type="button" class="secondary full">Ambil Koordinat GPS</button>
+<button type="submit" class="full">Simpan Data ODP</button>
+<p id="status" class="status"></p>
+</form>
+</section>
+
+<section class="card">
+<h2>Daftar ODP</h2>
+<input id="cari" placeholder="Cari nama atau alamat ODP">
+<p id="jumlah" class="small"></p>
+<div id="daftar"></div>
+<button id="backup" class="secondary full">Ekspor Cadangan JSON</button>
+<button id="restoreBtn" class="secondary full">Impor Cadangan JSON</button>
+<input id="restoreFile" type="file" accept=".json,application/json" hidden>
+</section>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const KEY="odp_mapping_data_v1";
+const $=id=>document.getElementById(id);
+let data=[];
+
+try{
+ const lama=JSON.parse(localStorage.getItem(KEY)||"[]");
+ if(Array.isArray(lama))data=lama;
+}catch(e){data=[]}
+
+const map=L.map("map").setView([-7.85,112.52],12);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+ maxZoom:19,
+ attribution:"&copy; OpenStreetMap contributors"
+}).addTo(map);
+
+const markers=L.layerGroup().addTo(map);
+let userMarker=null;
+
+function escapeHTML(value){
+ return String(value).replace(/[&<>"']/g,c=>({
+ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+ }[c]));
+}
+
+function koordinatValid(value){
+ if(!value)return null;
+ const c=value.split(",").map(Number);
+ if(c.length!==2||!c.every(Number.isFinite))return null;
+ if(c[0]<-90||c[0]>90||c[1]<-180||c[1]>180)return null;
+ return c;
+}
+
+function tampil(){
+ markers.clearLayers();
+ const q=$("cari").value.toLowerCase().trim();
+ const hasil=data.filter(x=>
+  String(x.nama||"").toLowerCase().includes(q)||
+  String(x.alamat||"").toLowerCase().includes(q)
+ );
+ $("jumlah").textContent="Menampilkan "+hasil.length+" dari "+data.length+" ODP";
+ $("daftar").replaceChildren();
+
+ hasil.forEach(x=>{
+  const c=koordinatValid(x.koordinat);
+  if(c){
+   L.marker(c).addTo(markers).bindPopup(
+    "<b>"+escapeHTML(x.nama)+"</b><br>"+
+    "Port: "+Number(x.terpakai)+"/"+Number(x.port)+" terpakai<br>"+
+    escapeHTML(x.alamat||"Tanpa alamat")
+   );
+  }
+
+  const el=document.createElement("div");
+  el.className="item";
+  const h=document.createElement("h3");
+  h.textContent=x.nama;
+  const p=document.createElement("p");
+  p.className="small";
+  p.textContent="Port "+x.terpakai+"/"+x.port+" terpakai | "+
+   Math.max(0,Number(x.port)-Number(x.terpakai))+" kosong";
+  const a=document.createElement("p");
+  a.className="small";
+  a.textContent="Alamat: "+(x.alamat||"-");
+  const g=document.createElement("p");
+  g.className="small";
+  g.textContent="GPS: "+(x.koordinat||"-");
+  el.append(h,p,a,g);
+
+  const actions=document.createElement("div");
+  actions.className="actions";
+   const edit=document.createElement("button");
+edit.textContent="Edit";
+edit.className="secondary";
+
+edit.onclick=()=>{
+ $("nama").value=x.nama;
+ $("port").value=String(x.port);
+ $("terpakai").max=x.port;
+ $("terpakai").value=x.terpakai;
+ $("alamat").value=x.alamat||"";
+ $("koordinat").value=x.koordinat||"";
+
+ $("nama").dataset.editId=x.id;
+ $("status").textContent="Mode edit: "+x.nama;
+
+ $("nama").scrollIntoView({
+  behavior:"smooth",
+  block:"center"
+ });
+};
+
+actions.append(edit);
+
+  if(c){
+   const lihat=document.createElement("button");
+   lihat.textContent="Lihat di Peta";
+   lihat.onclick=()=>{
+    map.setView(c,17);
+    markers.eachLayer(m=>{
+     const ll=m.getLatLng();
+     if(Math.abs(ll.lat-c[0])<0.000001&&
+        Math.abs(ll.lng-c[1])<0.000001)m.openPopup();
+    });
+   };
+   actions.append(lihat);
+  }
+
+  const hapus=document.createElement("button");
+  hapus.className="danger";
+  hapus.textContent="Hapus";
+  hapus.onclick=()=>{
+   if(confirm("Hapus data "+x.nama+"?")){
+    data=data.filter(y=>y.id!==x.id);
+    simpan();
+   }
+  };
+  actions.append(hapus);
+  el.append(actions);
+  $("daftar").append(el);
+ });
+}
+
+function simpan(){
+ try{
+  localStorage.setItem(KEY,JSON.stringify(data));
+  tampil();
+  $("status").textContent="Data tersimpan di perangkat/browser ini.";
+  return true;
+ }catch(e){
+  alert("Gagal menyimpan. Ekspor cadangan dan periksa penyimpanan browser.");
+  return false;
+ }
+}
+
+function ambilGPS(onSuccess){
+ if(!navigator.geolocation){
+  alert("Fitur GPS tidak tersedia. Buka halaman melalui browser yang mendukung lokasi.");
+  return;
+ }
+ navigator.geolocation.getCurrentPosition(pos=>{
+  onSuccess(pos.coords.latitude.toFixed(6)+", "+pos.coords.longitude.toFixed(6),
+   pos.coords.latitude,pos.coords.longitude);
+ },err=>{
+  alert("GPS gagal: "+(
+   err.code===1?"Izin lokasi ditolak.":
+   err.code===2?"Lokasi tidak tersedia.":
+   "Waktu pengambilan lokasi habis."
+  )+" Pastikan izin lokasi aktif dan GPS HP menyala.");
+ },{enableHighAccuracy:true,timeout:20000,maximumAge:0});
+}
+
+$("gps").onclick=()=>{
+ $("gps").textContent="Mengambil lokasi...";
+ $("gps").disabled=true;
+ ambilGPS(koor=>{
+  $("koordinat").value=koor;
+  $("gps").textContent="Ambil Koordinat GPS";
+  $("gps").disabled=false;
+ });
+ setTimeout(()=>{
+  $("gps").textContent="Ambil Koordinat GPS";
+  $("gps").disabled=false;
+ },21000);
+};
+
+$("myLocation").onclick=()=>{
+ $("myLocation").textContent="Mencari lokasi...";
+ ambilGPS((koor,lat,lng)=>{
+  if(userMarker)map.removeLayer(userMarker);
+  userMarker=L.marker([lat,lng]).addTo(map).bindPopup("Lokasi saya").openPopup();
+  map.setView([lat,lng],17);
+  $("myLocation").textContent="Tampilkan Lokasi Saya";
+ });
+ setTimeout(()=>{$("myLocation").textContent="Tampilkan Lokasi Saya"},21000);
+};
+
+$("form").onsubmit=e=>{
+ e.preventDefault();
+ const nama=$("nama").value.trim();
+ const port=Number($("port").value);
+ const terpakai=Number($("terpakai").value);
+
+ if(terpakai<0||terpakai>port){
+  alert("Port terpakai harus antara 0 dan "+port+".");
+  return;
+ }
+ if(data.some(x=>String(x.nama).toLowerCase()===nama.toLowerCase())){
+  alert("Nama ODP sudah terdaftar.");
+  return;
+ }
+
+ data.push({
+  id:Date.now(),
+  nama,port,terpakai,
+  alamat:$("alamat").value.trim(),
+  koordinat:$("koordinat").value,
+  dibuat:new Date().toISOString()
+ });
+
+ if(simpan()){
+  e.target.reset();
+  $("terpakai").value=0;
+  $("koordinat").value="";
+  $("terpakai").max=8;
+  alert("Data ODP berhasil disimpan.");
+ }
+};
+
+$("port").onchange=()=>{
+ const max=Number($("port").value);
+ $("terpakai").max=max;
+ if(Number($("terpakai").value)>max)$("terpakai").value=max;
+};
+
+$("cari").oninput=tampil;
+
+$("backup").onclick=()=>{
+ const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement("a");
+ a.href=url;a.download="backup-odp.json";a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1500);
+};
+
+$("restoreBtn").onclick=()=>$("restoreFile").click();
+$("restoreFile").onchange=async e=>{
+ const file=e.target.files[0];
+ if(!file)return;
+ try{
+  const imported=JSON.parse(await file.text());
+  if(!Array.isArray(imported)||!imported.every(x=>x&&typeof x.nama==="string")){
+   throw new Error("Format cadangan tidak sesuai.");
+  }
+  if(!confirm("Impor "+imported.length+" data? Data dengan nama sama akan digabung."))return;
+  imported.forEach(x=>{
+   const idx=data.findIndex(y=>y.nama.toLowerCase()===x.nama.toLowerCase());
+   if(idx>=0)data[idx]={...data[idx],...x};
+   else data.push(x);
+  });
+  simpan();
+  alert("Impor cadangan selesai.");
+ }catch(err){
+  alert("File cadangan tidak valid atau gagal dibaca.");
+ }finally{
+  e.target.value="";
+ }
+};
+
+tampil();
+setTimeout(()=>map.invalidateSize(),400);
+</script>
+</body>
+</html>
