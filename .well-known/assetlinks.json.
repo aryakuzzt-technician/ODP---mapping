@@ -1,1 +1,12 @@
-
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.aryakuzzt_technician.twa",
+      "sha256_cert_fingerprints": [
+        "36:87:B8:21:8F:C8:13:22:9A:53:C4:D2:32:F5:22:0A:D0:16:8F:29:7F:35:8E:D9:1E:C4:3F:A6:66:A2:AE:18"
+      ]
+    }
+  }
+]
